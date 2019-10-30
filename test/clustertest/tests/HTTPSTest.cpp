@@ -100,7 +100,7 @@ struct HTTPSTest : tpunit::TestFixture {
                 ASSERT_FALSE(body.size());
             }
             if (SToInt(code) != 200) {
-                cout << "Bad code: " << code << endl;
+                cout << "[HTTPSTest] Bad code: " << code << endl;
             }
             ASSERT_EQUAL(SToInt(code), 200);
         }
