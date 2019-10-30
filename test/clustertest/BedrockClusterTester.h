@@ -35,4 +35,7 @@ class BedrockClusterTester {
 
     // A list of all our testers that make up our cluster.
     vector<BedrockTester> _cluster;
+
+    string _clusterID;
+
 };

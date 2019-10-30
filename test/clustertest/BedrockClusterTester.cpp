@@ -8,6 +8,16 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
                                             map<string, string> _args, list<string> uniquePorts, string pluginsToLoad)
 : _size(size)
 {
+    // get a unique clusterID
+    cout << "debug: generating new clusterID for threadID " << threadID << endl;
+    auto now = chrono::system_clock::now();
+    auto now_ms = chrono::time_point_cast<chrono::milliseconds>(now);
+    auto value = now_ms.time_since_epoch();
+    long epoch_ms = value.count();
+    _clusterID = to_string(threadID) + "." + to_string(epoch_ms);
+
+    cout << "debug: starting run for clusterID: " << _clusterID << endl;
+
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
 
@@ -91,6 +101,11 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         for (auto& a : _args) {
             args[a.first] = a.second;
         }
+        cout << "debug: adding new cluster member to " << _clusterID << " cluster list: " << nodeName << " db: " << db << " args:";
+        for (auto& a : args) {
+            cout << " " << a.first << " " << a.second;
+        }
+        cout << endl;
         _cluster.emplace_back(threadID, args, queries, false);
     }
     list<thread> threads;
@@ -99,6 +114,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             _cluster[i].startServer();
         });
     }
+    cout << "debug: started all servers for " << _clusterID << endl;
     for (auto& i : threads) {
         i.join();
     }
@@ -126,16 +142,19 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             usleep(500000); // 0.5 seconds.
         }
     }
+    cout << "debug: passed status check for all servers for " << _clusterID << endl;
 }
 
 BedrockClusterTester::~BedrockClusterTester()
 {
     // Shut them down in reverse order so they don't try and stand up as leader in the middle of everything.
+    cout << "debug: stopping cluster" << endl;
     for (int i = _size - 1; i >= 0; i--) {
         stopNode(i);
     }
 
     _cluster.clear();
+    cout << "debug: cleared clusterID " << _clusterID << endl;
 }
 
 BedrockTester* BedrockClusterTester::getBedrockTester(size_t index)
