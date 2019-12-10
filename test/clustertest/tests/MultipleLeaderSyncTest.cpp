@@ -22,19 +22,19 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
                 request["query"] = "UPDATE test SET value=value + 1 WHERE id=12345;";
             }
             request["connection"] = "forget";
-            tester->getBedrockTester(nodeID)->executeWaitVerifyContent( request, "202" );
+            tester->getTester(nodeID).executeWaitVerifyContent(request, "202");
             count++;
         }
     }
 
     void setup() {
         // create a 5 node cluster
-        tester = new BedrockClusterTester(BedrockClusterTester::FIVE_NODE_CLUSTER, { "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)" }, _threadID);
+        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, { "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)" });
 
         // make sure the whole cluster is up
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({ "LEADING", "MASTERING" }));
+        ASSERT_TRUE(tester->getTester(0).waitForStates({ "LEADING", "MASTERING" }));
         for (int i = 1; i <= 4; i++) {
-            ASSERT_TRUE(tester->getBedrockTester(i)->waitForStates({ "FOLLOWING", "SLAVING" }));
+            ASSERT_TRUE(tester->getTester(i).waitForStates({ "FOLLOWING", "SLAVING" }));
         }
     }
 
@@ -43,43 +43,51 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
     }
 
     void test() {
+        // get handles for the cluster members
+        BedrockTester& node0 = tester->getTester(0);
+        BedrockTester& node1 = tester->getTester(1);
+        BedrockTester& node2 = tester->getTester(2);
+        BedrockTester& node3 = tester->getTester(3);
+        BedrockTester& node4 = tester->getTester(4);
+
         // shut down primary leader, make sure secondary takes over
         tester->stopNode(0);
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({ "LEADING", "MASTERING" }));
+        ASSERT_TRUE(node1.waitForStates({ "LEADING", "MASTERING" }));
 
         // move secondary leader enough commits ahead that primary leader can't catch up
-        runTrivialWrites( 5000, 4 );
-        ASSERT_TRUE( tester->getBedrockTester(4)->waitForCommit( 5000 ));
+        runTrivialWrites(5000, 4);
+        ASSERT_TRUE(node4.waitForCommit(5000, 100));
 
         // shut down secondary leader, make sure tertiary takes over
         tester->stopNode(1);
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({ "LEADING", "MASTERING" }));
+        ASSERT_TRUE(node2.waitForStates({ "LEADING", "MASTERING" }));
 
         // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING early
-        runTrivialWrites( 2000, 4 );
-        ASSERT_TRUE( tester->getBedrockTester(4)->waitForCommit( 7000 ));
+        runTrivialWrites(2000, 4);
+        ASSERT_TRUE(node4.waitForCommit(7000, 100));
 
         // just a check for the ready state
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({ "LEADING", "MASTERING" }));
-        ASSERT_TRUE(tester->getBedrockTester(3)->waitForStates({ "FOLLOWING", "SLAVING" }));
-        ASSERT_TRUE(tester->getBedrockTester(4)->waitForStates({ "FOLLOWING", "SLAVING" }));
+        ASSERT_TRUE(node2.waitForStates({ "LEADING", "MASTERING" }));
+        ASSERT_TRUE(node3.waitForStates({ "FOLLOWING", "SLAVING" }));
+        ASSERT_TRUE(node4.waitForStates({ "FOLLOWING", "SLAVING" }));
 
         // Bring leaders back up in reverse order, confirm priority, should go quickly to SYNCHRONIZING
+        // There's a race in the below flow, to confirm primary master is up and syncing before secondary master gets synced up.
         tester->startNodeDontWait(1);
+        ASSERT_TRUE(SToInt64(node1.getStatusTerm("Priority", true)) == -1);
+        ASSERT_TRUE(node1.waitForStates({ "SYNCHRONIZING" }, 10'000'000, true));
         tester->startNodeDontWait(0);
-        ASSERT_TRUE( SToInt64( tester->getBedrockTester(1)->getStatusTerm( "Priority", true )) == -1 );
-        ASSERT_TRUE( SToInt64( tester->getBedrockTester(0)->getStatusTerm( "Priority", true )) == -1 );
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({ "SYNCHRONIZING" }, 10'000'000, true ));
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({ "SYNCHRONIZING" }, 10'000'000, true ));
+        ASSERT_TRUE(SToInt64(node0.getStatusTerm("Priority", true)) == -1);
+        ASSERT_TRUE(node0.waitForStates({ "SYNCHRONIZING" }, 10'000'000, true));
 
         // tertiary leader should still be MASTERING for a little while
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({ "LEADING", "MASTERING" }, 5'000'000 ));
+        ASSERT_TRUE(node2.waitForStates({ "LEADING", "MASTERING" }, 5'000'000));
 
         // secondary leader should catch up first and go MASTERING, wait up to 30s
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({ "LEADING", "MASTERING" }, 30'000'000 ));
+        ASSERT_TRUE(node1.waitForStates({ "LEADING", "MASTERING" }, 30'000'000));
 
         // when primary leader catches up it should go MASTERING, wait up to 30s
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({ "LEADING", "MASTERING" }, 30'000'000 ));
+        ASSERT_TRUE(node0.waitForStates({ "LEADING", "MASTERING" }, 30'000'000));
     }
 
 } __MultipleLeaderSyncTest;
