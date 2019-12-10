@@ -41,9 +41,6 @@ class ClusterTester {
 
     // A list of all our testers that make up our cluster.
     list<T> _cluster;
-
-    // Internal unique id for differentiating simultaneous cluster instances
-    string _clusterID;
 };
 
 typedef ClusterTester<BedrockTester> BedrockClusterTester;
