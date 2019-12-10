@@ -395,6 +395,8 @@ void BedrockServer::sync(const SData& args,
             int dropped = 0;
             try {
                 while (true) {
+                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                    command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
                     command = syncNodeQueuedCommands.pop();
                     if (command.initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
@@ -473,6 +475,9 @@ void BedrockServer::sync(const SData& args,
             if (committingCommand) {
                 continue;
             }
+
+            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+            command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
 
             // Get the next sync node command to work on.
             command = syncNodeQueuedCommands.pop();
@@ -685,6 +690,10 @@ void BedrockServer::worker(const SData& args,
                 SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
+            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+            command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
+
+            // And get another one.
             command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command.request);
@@ -879,12 +888,12 @@ void BedrockServer::worker(const SData& args,
                           << ((STimeNow() - preLockTime)/1000) << "ms.");
                 }
 
-                // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
-                // now. We don't duplicate peeks for commands that make https requests.
+                // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
+                // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
                 bool peekResult = false;
-                if (!command.httpsRequests.size()) {
+                if (command.repeek || !command.httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
@@ -907,15 +916,21 @@ void BedrockServer::worker(const SData& args,
                             break;
                         }
 
-                        // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
-                        if (!command.areHttpsRequestsComplete()) {
+                        // If the command isn't complete, we'll re-queue it.
+                        if (command.repeek || !command.areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
                             }
 
-                            // We'll save this command until any HTTPS requests finish.
-                            server.waitForHTTPS(move(command));
+                            if (!command.areHttpsRequestsComplete()) {
+                                // If it has outstanding HTTPS requests, we'll wait for them.
+                                server.waitForHTTPS(move(command));
+                            } else if (command.repeek) {
+                                // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
+                                // back in the main queue.
+                                commandQueue.push(move(command));
+                            }
 
                             // Move on to the next command until this one finishes.
                             break;
@@ -2138,7 +2153,9 @@ void BedrockServer::waitForHTTPS(BedrockCommand&& command) {
 
     // Insert each request pointing at the given object.
     for (auto request : commandPtr->httpsRequests) {
-        _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+        if (!request->response) {
+            _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+        }
     }
 }
 
