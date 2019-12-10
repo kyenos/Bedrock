@@ -43,7 +43,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
     }
 
     void test() {
-        // get handles for the cluster members
+        // get convenience handles for the cluster members
         BedrockTester& node0 = tester->getTester(0);
         BedrockTester& node1 = tester->getTester(1);
         BedrockTester& node2 = tester->getTester(2);
@@ -54,17 +54,17 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         tester->stopNode(0);
         ASSERT_TRUE(node1.waitForStates({ "LEADING", "MASTERING" }));
 
-        // move secondary leader enough commits ahead that primary leader can't catch up
+        // move secondary leader enough commits ahead that primary leader can't catch up before our status tests
         runTrivialWrites(5000, 4);
-        ASSERT_TRUE(node4.waitForCommit(5000, 100));
+        ASSERT_TRUE(node4.waitForCommit(5000, 60));
 
         // shut down secondary leader, make sure tertiary takes over
         tester->stopNode(1);
         ASSERT_TRUE(node2.waitForStates({ "LEADING", "MASTERING" }));
 
-        // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING early
+        // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING before our status tests
         runTrivialWrites(2000, 4);
-        ASSERT_TRUE(node4.waitForCommit(7000, 100));
+        ASSERT_TRUE(node4.waitForCommit(7000, 60));
 
         // just a check for the ready state
         ASSERT_TRUE(node2.waitForStates({ "LEADING", "MASTERING" }));
