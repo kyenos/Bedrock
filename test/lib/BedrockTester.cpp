@@ -601,6 +601,7 @@ string BedrockTester::getStatusTerm(string term, bool control) {
         responseTable = getStatus(control);
         i++;
     }
+    SASSERT(i<1000);
     return responseTable[ term ];
 }
 
