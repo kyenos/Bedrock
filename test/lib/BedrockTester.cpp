@@ -587,29 +587,29 @@ int BedrockTester::waitForPort(int port) {
 STable BedrockTester::getStatus(bool control) {
     // FYI: sometimes the status command doesn't return with every key/value expected
     SData request("Status");
-    string response = executeWaitVerifyContent(request, "200", control);
-    STable responseTable = SParseJSONObject(response);
-    return responseTable;
+    return SParseJSONObject(executeWaitVerifyContent(request, "200", control));
 }
 
 // get the value of a particular term from the output of a "Status" command
 string BedrockTester::getStatusTerm(string term, bool control) {
     STable responseTable;
+    int i = 0;
 
     // FYI: sometimes the status command doesn't return with every key/value expected
-    // loop until you find it
-    while (!responseTable.count(term)) {
+    // loop up to 1000 times until you find it
+    while (!responseTable.count(term) && i<1000) {
         responseTable = getStatus(control);
+        i++;
     }
     return responseTable[ term ];
 }
 
 // wait for the specified commit
 bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control){
-    int commitCount;
+    int commitCount = 0;
     int i = 0;
 
-    // check commitCount up to "retries" times
+    // check commitCount up to "retries" times with a 1s sleep between calls
     while (commitCount < minCommitCount && i < retries) {
         sleep(1);
         commitCount = SToInt64(getStatusTerm("commitCount"));
