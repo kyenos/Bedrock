@@ -18,11 +18,12 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
             request.methodLine = "Query";
             if (count == 0) {
                 request["query"] = "INSERT OR REPLACE INTO test (id, value) VALUES(12345, 1 );";
+                tester->getTester(nodeID).executeWaitVerifyContent(request, "200");
             } else {
                 request["query"] = "UPDATE test SET value=value + 1 WHERE id=12345;";
+                request["connection"] = "forget";
+                tester->getTester(nodeID).executeWaitVerifyContent(request, "202");
             }
-            request["connection"] = "forget";
-            tester->getTester(nodeID).executeWaitVerifyContent(request, "202");
             count++;
         }
     }

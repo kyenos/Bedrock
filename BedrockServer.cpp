@@ -369,11 +369,13 @@ void BedrockServer::sync(const SData& args,
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             upgradeInProgress.store(true);
+            command.request.methodLine = "_upgradeDB";
             if (server._upgradeDB(db)) {
                 server._syncThreadCommitMutex.lock();
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
+                SDEBUG("finished sending distributed transaction for db upgrade");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -443,10 +445,19 @@ void BedrockServer::sync(const SData& args,
                 // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
                 // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
                 // probably indicates a bug (or a follower disk failure).
-                SINFO("requeueing command " << command.request.methodLine
-                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
-                      << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+
+                // upgradeDB is known to be subject to this condition at cluster startup, if an unstable cluster state
+                // leads to high velocity leader flip-flopping before the upgrade has a chance to finish.
+                if (upgradeInProgress.load()) {
+                    SINFO("clearing stale _upgradeDB() state variables");
+                    upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
+                } else {
+                    SINFO("requeueing command " << command.request.methodLine
+                          << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                          << " queued commands.");
+                    syncNodeQueuedCommands.push(move(command));
+                }
             }
 
             // Prevent the requestID from a finished command from being used.
@@ -1989,6 +2000,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
     }
+    SDEBUG("finished running _upgradeDB()");
     return !db.getUncommittedQuery().empty();
 }
 
