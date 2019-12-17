@@ -369,13 +369,12 @@ void BedrockServer::sync(const SData& args,
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             upgradeInProgress.store(true);
-            command.request.methodLine = "_upgradeDB";
             if (server._upgradeDB(db)) {
                 server._syncThreadCommitMutex.lock();
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
-                SDEBUG("finished sending distributed transaction for db upgrade");
+                SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -2000,7 +1999,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
     }
-    SDEBUG("finished running _upgradeDB()");
+    SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
 }
 

@@ -1088,7 +1088,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
 
         // It's an error to have to peers configured with the same priority, except 0 and -1
-        SASSERT(!_priority || _priority < 0 || message.calc("Priority") != _priority);
+        SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
         peer->set("Priority", message["Priority"]);
