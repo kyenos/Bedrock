@@ -11,18 +11,18 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     // Create a bunch of trivial write commands.
-    void runTrivialWrites(int writeCount, int nodeID = 0) {
+    void runTrivialWrites(int writeCount, BedrockTester& node) {
         int count = 0;
         while (count <= writeCount) {
             SData request;
             request.methodLine = "Query";
             if (count == 0) {
                 request["query"] = "INSERT OR REPLACE INTO test (id, value) VALUES(12345, 1 );";
-                tester->getTester(nodeID).executeWaitVerifyContent(request, "200");
+                node.executeWaitVerifyContent(request, "200");
             } else {
                 request["query"] = "UPDATE test SET value=value + 1 WHERE id=12345;";
                 request["connection"] = "forget";
-                tester->getTester(nodeID).executeWaitVerifyContent(request, "202");
+                node.executeWaitVerifyContent(request, "202");
             }
             count++;
         }
@@ -56,7 +56,9 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node1.waitForStates({"LEADING", "MASTERING"}));
 
         // move secondary leader enough commits ahead that primary leader can't catch up before our status tests
-        runTrivialWrites(5000, 4);
+        runTrivialWrites(5000, node4);
+        ASSERT_TRUE(node2.waitForCommit(5000, 100));
+        ASSERT_TRUE(node3.waitForCommit(5000, 100));
         ASSERT_TRUE(node4.waitForCommit(5000, 100));
 
         // shut down secondary leader, make sure tertiary takes over
@@ -64,7 +66,9 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}));
 
         // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING before our status tests
-        runTrivialWrites(2000, 4);
+        runTrivialWrites(2000, node4);
+        ASSERT_TRUE(node2.waitForCommit(7000, 100));
+        ASSERT_TRUE(node3.waitForCommit(7000, 100));
         ASSERT_TRUE(node4.waitForCommit(7000, 100));
 
         // just a check for the ready state
@@ -74,11 +78,18 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
 
         // Bring leaders back up in reverse order, confirm priority, should go quickly to SYNCHRONIZING
         // There's a race in the below flow, to confirm primary master is up and syncing before secondary master gets synced up.
+        int priority;
         tester->startNodeDontWait(1);
-        ASSERT_TRUE(SToInt64(node1.getStatusTerm("Priority", true)) == -1);
+        do {
+            priority = SToInt64(node1.getStatusTerm("Priority", true));
+        } while (priority == 0);
+        ASSERT_TRUE(priority == -1);
         ASSERT_TRUE(node1.waitForStates({"SYNCHRONIZING"}, 10'000'000, true));
         tester->startNodeDontWait(0);
-        ASSERT_TRUE(SToInt64(node0.getStatusTerm("Priority", true)) == -1);
+        do {
+            priority = SToInt64(node0.getStatusTerm("Priority", true));
+        } while (priority == 0);
+        ASSERT_TRUE(priority == -1);
         ASSERT_TRUE(node0.waitForStates({"SYNCHRONIZING"}, 10'000'000, true));
 
         // tertiary leader should still be MASTERING for a little while
