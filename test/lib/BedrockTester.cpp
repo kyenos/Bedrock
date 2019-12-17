@@ -595,7 +595,7 @@ string BedrockTester::getStatusTerm(string term, bool control) {
 }
 
 bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control){
-    int commitCount = 0;
+    int commitCount = SToInt64(getStatusTerm("commitCount"));
     int i = 0;
 
     // check commitCount up to "retries" times with a 1s sleep between calls
