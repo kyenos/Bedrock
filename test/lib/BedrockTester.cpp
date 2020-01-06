@@ -155,7 +155,8 @@ BedrockTester::~BedrockTester() {
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
 
-    if (_ownPorts) {
+    // Release programmatically allocated ports
+    if (!_ownPorts) {
         ports.returnPort(_serverPort);
         ports.returnPort(_nodePort);
         ports.returnPort(_controlPort);

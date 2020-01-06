@@ -214,5 +214,7 @@ class BedrockTester {
     uint16_t _serverPort;
     uint16_t _nodePort;
     uint16_t _controlPort;
+
+    // If the ports were specified in advance.
     const bool _ownPorts;
 };
